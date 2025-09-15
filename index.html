@@ -246,6 +246,19 @@
             </div>
         </div>
 
+        <div class="transaction-form" style="margin-bottom: 20px;">
+            <h3>Phantom App ID</h3>
+            <p style="color: #666; margin-bottom: 10px;">Set your App ID from the Phantom Portal. The connect flow uses this ID in Phantom's Browser SDK.</p>
+            <div class="form-group">
+                <label for="appIdInput">App ID</label>
+                <input type="text" id="appIdInput" placeholder="your-app-id-from-phantom-portal">
+            </div>
+            <div class="button-group" style="grid-template-columns: 1fr 1fr;">
+                <button class="btn" id="saveAppIdBtn">Save App ID</button>
+                <button class="btn btn-secondary" id="openInPhantomBtn">Open this page in Phantom</button>
+            </div>
+        </div>
+
         <div class="button-group">
             <button class="btn" onclick="testConnection()" id="connectBtn">
                 Connect Phantom Wallet
@@ -327,14 +340,17 @@
     </div>
 
     <script>
-        // Phantom Wallet Integration Class
+        // Phantom Wallet Integration Class (updated to use Browser SDK where available)
         class PhantomWalletIntegration {
             constructor() {
-                this.appScheme = 'phantom-test://';
-                this.phantomAppId = 'phantom';
+                // State
                 this.pendingTransactions = new Map();
-                this.setupReturnHandler();
                 this.connectedPublicKey = null;
+                this.sdk = null;
+                this.AddressType = null; // populated when SDK loads
+
+                // UI helpers
+                this.setupReturnHandler();
             }
 
             log(message, type = 'info') {
@@ -348,185 +364,131 @@
 
             async isPhantomInstalled() {
                 this.log('Checking if Phantom is installed...');
-                
-                return new Promise((resolve) => {
-                    const timeout = setTimeout(() => {
-                        this.log('Phantom installation check timed out - assuming not installed');
-                        resolve(false);
-                    }, 2000);
-                    
-                    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-                    
-                    if (isMobile) {
-                        const startTime = Date.now();
-                        const iframe = document.createElement('iframe');
-                        iframe.style.display = 'none';
-                        iframe.src = 'phantom://';
-                        document.body.appendChild(iframe);
-                        
-                        setTimeout(() => {
-                            document.body.removeChild(iframe);
-                            const endTime = Date.now();
-                            const installed = (endTime - startTime) < 1000;
-                            clearTimeout(timeout);
-                            this.log(`Phantom ${installed ? 'appears to be' : 'does not appear to be'} installed`);
-                            resolve(installed);
-                        }, 500);
-                    } else {
-                        clearTimeout(timeout);
-                        this.log('Running on desktop - Phantom mobile check not applicable');
-                        resolve(false);
-                    }
-                });
+                const ua = navigator.userAgent || '';
+                const inPhantomBrowser = /Phantom/i.test(ua) || (typeof window !== 'undefined' && window.phantom);
+                if (inPhantomBrowser) {
+                    this.log('Phantom in-app browser detected');
+                    return true;
+                }
+                // Fallback heuristic for mobile app presence is unreliable from web; report false.
+                this.log('Not in Phantom in-app browser. Use "Open this page in Phantom" to continue.');
+                return false;
             }
 
             generateTransactionId() {
                 return 'tx_' + Math.random().toString(36).substr(2, 9) + Date.now();
             }
 
-            async connect() {
-                this.log('Initiating connection to Phantom...');
-                const transactionId = this.generateTransactionId();
-                const returnUrl = `${this.appScheme}phantom-return?action=connect&txId=${transactionId}`;
-                
-                const isInstalled = await this.isPhantomInstalled();
-                if (!isInstalled) {
-                    this.log('Phantom not installed, redirecting to app store...');
-                    this.redirectToAppStore();
-                    return;
-                }
-
-                this.pendingTransactions.set(transactionId, {
-                    type: 'connect',
-                    timestamp: Date.now(),
-                    promise: null
-                });
-
-                return new Promise((resolve, reject) => {
-                    this.pendingTransactions.get(transactionId).promise = { resolve, reject };
-                    
-                    const phantomUrl = this.buildPhantomUrl('connect', {
-                        redirect_link: encodeURIComponent(returnUrl),
-                        app_url: encodeURIComponent(window.location.origin)
-                    });
-
-                    this.log(`Opening Phantom with URL: ${phantomUrl}`);
-                    this.openPhantomApp(phantomUrl);
-                    
-                    // For testing, simulate a successful connection after 3 seconds
-                    setTimeout(() => {
-                        this.simulateSuccessfulConnection(transactionId);
-                    }, 3000);
-                });
+            isInPhantomBrowser() {
+                const ua = navigator.userAgent || '';
+                return /Phantom/i.test(ua) || (!!window.phantom);
             }
 
-            simulateSuccessfulConnection(transactionId) {
-                const fakePublicKey = 'HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH';
-                this.processPhantomReturn({
-                    action: 'connect',
-                    txId: transactionId,
-                    success: true,
-                    publicKey: fakePublicKey,
-                    signature: null,
-                    error: null
-                });
+            async loadBrowserSDK() {
+                if (this.sdk) return this.sdk;
+                const appId = (document.getElementById('appIdInput')?.value || localStorage.getItem('phantom.appId') || '').trim();
+                if (!appId) {
+                    throw new Error('App ID is required. Set it above.');
+                }
+                this.log('Loading Phantom Browser SDK...');
+                try {
+                    // Try esm.sh first
+                    const mod = await import('https://esm.sh/@phantom/browser-sdk@beta');
+                    const { BrowserSDK, AddressType } = mod;
+                    this.AddressType = AddressType;
+                    this.sdk = new BrowserSDK({
+                        providerType: 'injected',
+                        addressTypes: [AddressType.solana],
+                        appId,
+                    });
+                    this.log('Phantom Browser SDK loaded');
+                    return this.sdk;
+                } catch (e1) {
+                    this.log('Primary CDN failed, attempting secondary...', 'warning');
+                    try {
+                        const mod2 = await import('https://cdn.jsdelivr.net/npm/@phantom/browser-sdk@beta/dist/index.js');
+                        const { BrowserSDK, AddressType } = mod2;
+                        this.AddressType = AddressType;
+                        this.sdk = new BrowserSDK({
+                            providerType: 'injected',
+                            addressTypes: [AddressType.solana],
+                            appId,
+                        });
+                        this.log('Phantom Browser SDK loaded (secondary)');
+                        return this.sdk;
+                    } catch (e2) {
+                        this.log('Failed to load Browser SDK from CDNs. Are you online and in Phantom browser?', 'error');
+                        throw e2;
+                    }
+                }
+            }
+
+            async connect() {
+                this.log('Initiating connection to Phantom via Browser SDK...');
+                if (!this.isInPhantomBrowser()) {
+                    this.showNotification('Open this page in Phantom first, then connect.', 'error');
+                    return Promise.reject(new Error('Not in Phantom in-app browser'));
+                }
+                const sdk = await this.loadBrowserSDK();
+                this.showLoadingState('Connecting to Phantom...');
+                try {
+                    const { addresses } = await sdk.connect();
+                    const solAddr = (addresses || []).find(a => a.type === this.AddressType.solana)?.address;
+                    if (!solAddr) throw new Error('No Solana address returned');
+                    this.connectedPublicKey = solAddr;
+                    this.updateConnectionStatus(true, solAddr);
+                    this.hideLoadingState();
+                    this.log(`Connected: ${solAddr}`, 'success');
+                    // Verify connection by signing a message
+                    const verification = await this.signMessage('Verification: Hello from Phantom!');
+                    return { addresses, verification };
+                } catch (err) {
+                    this.hideLoadingState();
+                    this.log(`Connect failed: ${err.message}`, 'error');
+                    throw err;
+                }
+            }
+
+            simulateSuccessfulConnection() {
+                // No-op: simulation removed in favor of real SDK
             }
 
             async sendTransaction(transactionData) {
-                this.log('Preparing transaction...', 'transaction');
-                const transactionId = this.generateTransactionId();
-                const returnUrl = `${this.appScheme}phantom-return?action=signTransaction&txId=${transactionId}`;
-                
-                if (!this.connectedPublicKey) {
-                    throw new Error('Wallet not connected');
-                }
-
-                if (!this.validateTransactionData(transactionData)) {
-                    throw new Error('Invalid transaction data');
-                }
-
-                this.pendingTransactions.set(transactionId, {
-                    type: 'transaction',
-                    data: transactionData,
-                    timestamp: Date.now(),
-                    promise: null
-                });
-
-                return new Promise((resolve, reject) => {
-                    this.pendingTransactions.get(transactionId).promise = { resolve, reject };
-
-                    const phantomUrl = this.buildPhantomUrl('signTransaction', {
-                        redirect_link: encodeURIComponent(returnUrl),
-                        transaction: encodeURIComponent(JSON.stringify(transactionData))
-                    });
-
-                    this.log(`Sending transaction: ${JSON.stringify(transactionData)}`);
-                    this.openPhantomApp(phantomUrl);
-                    
-                    setTimeout(() => {
-                        const fakeSignature = '5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQpjKhoR4tjF3ZpRzrFmBV6UjKdiSZkQUW';
-                        this.processPhantomReturn({
-                            action: 'signTransaction',
-                            txId: transactionId,
-                            success: true,
-                            signature: fakeSignature,
-                            publicKey: this.connectedPublicKey,
-                            error: null
-                        });
-                    }, 4000);
-                });
+                // Placeholder: Proper transaction building requires @solana/web3.js.
+                throw new Error('sendTransaction requires a real Solana Transaction. Not implemented in this demo.');
             }
 
             async signMessage(message) {
                 this.log(`Requesting signature for message: "${message}"`);
-                const transactionId = this.generateTransactionId();
-                
                 if (!this.connectedPublicKey) {
-                    throw new Error('Wallet not connected');
+                    // If not yet connected but SDK present, try lazy connect
+                    if (this.isInPhantomBrowser()) {
+                        await this.connect();
+                    } else {
+                        throw new Error('Wallet not connected');
+                    }
                 }
-
-                this.pendingTransactions.set(transactionId, {
-                    type: 'signMessage',
-                    message: message,
-                    timestamp: Date.now(),
-                    promise: null
-                });
-
-                return new Promise((resolve, reject) => {
-                    this.pendingTransactions.get(transactionId).promise = { resolve, reject };
-
-                    setTimeout(() => {
-                        const fakeSignature = '3Bxs7NqZBXqJczKk2bCWKWnCqAzx7gZLF1YvQ2KMW4KwCpT5iU2kN8VbGm3Tm9F7QgF5WzXrS6YvJ4LmPp1K9N8a';
-                        this.processPhantomReturn({
-                            action: 'signMessage',
-                            txId: transactionId,
-                            success: true,
-                            signature: fakeSignature,
-                            publicKey: this.connectedPublicKey,
-                            error: null
-                        });
-                    }, 2000);
-                });
+                const sdk = await this.loadBrowserSDK();
+                try {
+                    const sig = await sdk.solana.signMessage(message);
+                    this.log(`Signature: ${typeof sig === 'string' ? sig : JSON.stringify(sig)}`, 'success');
+                    return sig;
+                } catch (e) {
+                    this.log(`Sign message failed: ${e.message}`, 'error');
+                    throw e;
+                }
             }
 
-            buildPhantomUrl(action, params) {
-                const baseUrl = `phantom://ul/v1/${action}`;
-                const queryString = Object.keys(params)
-                    .map(key => `${key}=${params[key]}`)
-                    .join('&');
-                
-                return `${baseUrl}?${queryString}`;
+            buildPhantomBrowseDeeplink(targetUrl, refUrl = window.location.origin) {
+                // Docs: https://docs.phantom.com/phantom-deeplinks/other-methods/browse
+                return `https://phantom.app/ul/browse/${encodeURIComponent(targetUrl)}?ref=${encodeURIComponent(refUrl)}`;
             }
 
             openPhantomApp(url) {
                 this.showLoadingState('Redirecting to Phantom...');
                 this.log(`Attempting to open: ${url}`);
-                
                 window.location.href = url;
-                
-                setTimeout(() => {
-                    this.hideLoadingState();
-                }, 1000);
+                setTimeout(() => { this.hideLoadingState(); }, 1000);
             }
 
             redirectToAppStore() {
@@ -706,52 +668,19 @@
                     default:
                         searchUrl = searchQuery;
                 }
-                
-                const phantomBrowserUrl = `phantom://browse?url=${encodeURIComponent(searchUrl)}`;
-                
-                this.log(`Generated Phantom browser URL: ${phantomBrowserUrl}`);
-                this.showLoadingState('Opening Phantom Browser...');
-                
-                try {
-                    window.location.href = phantomBrowserUrl;
-                    
-                    setTimeout(() => {
-                        this.hideLoadingState();
-                        this.showNotification('Phantom browser should be opening!', 'success');
-                    }, 1000);
-                    
-                } catch (error) {
-                    this.hideLoadingState();
-                    this.log(`Failed to open Phantom browser: ${error.message}`, 'error');
-                    this.showNotification('Failed to open Phantom browser', 'error');
-                }
+                const deeplink = this.buildPhantomBrowseDeeplink(searchUrl, window.location.href);
+                this.log(`Generated Phantom browse deeplink: ${deeplink}`);
+                this.openPhantomApp(deeplink);
             }
 
             async openPhantomBrowserDirect(url) {
                 this.log(`Opening Phantom browser directly with URL: "${url}"`);
-                
                 if (!url.startsWith('http://') && !url.startsWith('https://')) {
                     url = 'https://' + url;
                 }
-                
-                const phantomBrowserUrl = `phantom://browse?url=${encodeURIComponent(url)}`;
-                
-                this.log(`Generated direct Phantom browser URL: ${phantomBrowserUrl}`);
-                this.showLoadingState('Opening Phantom Browser...');
-                
-                try {
-                    window.location.href = phantomBrowserUrl;
-                    
-                    setTimeout(() => {
-                        this.hideLoadingState();
-                        this.showNotification('Phantom browser opened with URL!', 'success');
-                    }, 1000);
-                    
-                } catch (error) {
-                    this.hideLoadingState();
-                    this.log(`Failed to open Phantom browser: ${error.message}`, 'error');
-                    this.showNotification('Failed to open Phantom browser', 'error');
-                }
+                const deeplink = this.buildPhantomBrowseDeeplink(url, window.location.href);
+                this.log(`Generated Phantom browse deeplink: ${deeplink}`);
+                this.openPhantomApp(deeplink);
             }
 
             updateConnectionStatus(connected, publicKey = null) {
@@ -779,19 +708,19 @@
             }
         }
 
-        // Initialize the phantom wallet integration
+    // Initialize the phantom wallet integration
         const phantomWallet = new PhantomWalletIntegration();
 
         // Global test functions - these were missing from your original code
-        async function testConnection() {
+    async function testConnection() {
             try {
                 const btn = document.getElementById('connectBtn');
                 btn.textContent = 'Connecting...';
                 btn.classList.add('loading');
                 btn.disabled = true;
                 
-                const result = await phantomWallet.connect();
-                phantomWallet.log('Connection successful!', 'success');
+        const result = await phantomWallet.connect();
+        phantomWallet.log('Connection + verification successful!', 'success');
                 
                 btn.textContent = 'Connected ✓';
                 setTimeout(() => {
@@ -828,7 +757,7 @@
             }, 3000);
         }
 
-        async function testTransaction() {
+    async function testTransaction() {
             const recipientAddress = document.getElementById('recipientAddress').value;
             const amount = parseFloat(document.getElementById('amount').value);
             const memo = document.getElementById('memo').value;
@@ -848,9 +777,8 @@
                     amount: amount * 1000000000, // Convert SOL to lamports
                     memo: memo || ''
                 };
-                
-                const result = await phantomWallet.sendTransaction(transactionData);
-                phantomWallet.log('Transaction sent successfully!', 'success');
+        const result = await phantomWallet.sendTransaction(transactionData);
+        phantomWallet.log('Transaction sent successfully!', 'success');
                 
                 btn.textContent = 'Transaction Sent ✓';
                 setTimeout(() => {
@@ -870,7 +798,7 @@
             }
         }
 
-        async function testSignMessage() {
+    async function testSignMessage() {
             const message = document.getElementById('messageToSign').value;
             
             if (!message.trim()) {
@@ -883,8 +811,8 @@
                 btn.textContent = 'Signing...';
                 btn.disabled = true;
                 
-                const result = await phantomWallet.signMessage(message);
-                phantomWallet.log('Message signed successfully!', 'success');
+        const result = await phantomWallet.signMessage(message);
+        phantomWallet.log('Message signed successfully!', 'success');
                 
                 btn.textContent = 'Message Signed ✓';
                 setTimeout(() => {
@@ -958,10 +886,49 @@
             }
         });
 
+        // Helpers for App ID and opening in Phantom
+        function saveAppId() {
+            const appId = (document.getElementById('appIdInput').value || '').trim();
+            if (!appId) {
+                phantomWallet.showNotification('Enter a valid App ID', 'error');
+                return;
+            }
+            localStorage.setItem('phantom.appId', appId);
+            phantomWallet.showNotification('App ID saved', 'success');
+        }
+
+        function openThisPageInPhantom() {
+            const url = new URL(window.location.href);
+            url.searchParams.set('autoConnect', '1');
+            const deeplink = phantomWallet.buildPhantomBrowseDeeplink(url.toString(), window.location.href);
+            phantomWallet.log(`Opening this page in Phantom via: ${deeplink}`);
+            phantomWallet.openPhantomApp(deeplink);
+        }
+
         // Initialize the page
-        window.addEventListener('load', () => {
+        window.addEventListener('load', async () => {
+            // Prefill App ID from storage
+            const stored = localStorage.getItem('phantom.appId');
+            if (stored) {
+                document.getElementById('appIdInput').value = stored;
+            }
+
+            // Wire buttons
+            document.getElementById('saveAppIdBtn').addEventListener('click', saveAppId);
+            document.getElementById('openInPhantomBtn').addEventListener('click', openThisPageInPhantom);
+
             phantomWallet.log('Phantom Wallet Integration Test Page loaded');
             phantomWallet.log('Ready to test wallet functionality!');
+
+            // If already in Phantom and asked to auto-connect, do it
+            const params = new URLSearchParams(window.location.search);
+            if (phantomWallet.isInPhantomBrowser() && params.get('autoConnect') === '1') {
+                try {
+                    await testConnection();
+                } catch (e) {
+                    // already logged
+                }
+            }
         });
     </script>
 </body>
