@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phantom Wallet Integration Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .status-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+
+        .status-card h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-indicator.connected {
+            background: #28a745;
+        }
+
+        .status-indicator.disconnected {
+            background: #dc3545;
+        }
+
+        .button-group {
+            display: grid;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 25px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #333;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .transaction-form {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .logs {
+            background: #000;
+            color: #00ff00;
+            padding: 20px;
+            border-radius: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        .logs-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .clear-logs {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .wallet-info {
+            display: none;
+            background: #e8f5e8;
+            border: 1px solid #4caf50;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+
+        .wallet-info.show {
+            display: block;
+        }
+
+        .address {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            background: #f0f0f0;
+            padding: 8px;
+            border-radius: 4px;
+            word-break: break-all;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 0;
+                border-radius: 0;
+                min-height: 100vh;
+            }
+            
+            .header h1 {
+                font-size: 24px;
+            }
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .loading {
+            animation: pulse 1.5s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔮 Phantom Wallet Tester</h1>
+            <p>Test your Phantom wallet integration on mobile</p>
+        </div>
+
+        <div class="status-card">
+            <h3>Connection Status</h3>
+            <p>
+                <span class="status-indicator disconnected" id="statusIndicator"></span>
+                <span id="connectionStatus">Not Connected</span>
+            </p>
+            <div class="wallet-info" id="walletInfo">
+                <strong>Wallet Address:</strong>
+                <div class="address" id="walletAddress"></div>
+            </div>
+        </div>
+
+        <div class="button-group">
+            <button class="btn" onclick="testConnection()" id="connectBtn">
+                Connect Phantom Wallet
+            </button>
+            
+            <button class="btn btn-secondary" onclick="testInstallCheck()" id="installBtn">
+                Check if Phantom is Installed
+            </button>
+        </div>
+
+        <div class="transaction-form" style="margin-bottom: 20px;">
+            <h3>🌐 Phantom Browser Search</h3>
+            <p style="color: #666; margin-bottom: 15px;">Use Phantom's built-in browser to search or navigate</p>
+            
+            <div class="form-group">
+                <label for="searchQuery">Search Query:</label>
+                <input type="text" id="searchQuery" placeholder="Enter search term or URL..." value="hello world">
+            </div>
+            
+            <div class="form-group">
+                <label for="searchEngine">Search Engine:</label>
+                <select id="searchEngine">
+                    <option value="google">Google</option>
+                    <option value="bing">Bing</option>
+                    <option value="duckduckgo">DuckDuckGo</option>
+                    <option value="custom">Custom URL</option>
+                </select>
+            </div>
+            
+            <div class="form-group" id="customUrlGroup" style="display: none;">
+                <label for="customUrl">Custom URL:</label>
+                <input type="url" id="customUrl" placeholder="https://example.com">
+            </div>
+            
+            <button class="btn" onclick="openPhantomBrowser()" style="background: linear-gradient(135deg, #9c27b0 0%, #673ab7 100%);">
+                🔍 Search in Phantom Browser
+            </button>
+            
+            <button class="btn" onclick="openPhantomBrowserDirect()" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); margin-top: 10px;">
+                🌐 Open URL in Phantom Browser
+            </button>
+        </div>
+
+        <div class="transaction-form">
+            <h3>Send Transaction</h3>
+            <div class="form-group">
+                <label for="recipientAddress">Recipient Address:</label>
+                <input type="text" id="recipientAddress" placeholder="Enter Solana address..." value="11111111111111111111111111111112">
+            </div>
+            
+            <div class="form-group">
+                <label for="amount">Amount (SOL):</label>
+                <input type="number" id="amount" placeholder="0.001" value="0.001" step="0.001">
+            </div>
+            
+            <div class="form-group">
+                <label for="memo">Memo (optional):</label>
+                <input type="text" id="memo" placeholder="Payment memo...">
+            </div>
+            
+            <button class="btn btn-success" onclick="testTransaction()" id="sendBtn" disabled>
+                Send Transaction
+            </button>
+        </div>
+
+        <div class="form-group">
+            <label for="messageToSign">Message to Sign:</label>
+            <textarea id="messageToSign" rows="3" placeholder="Enter message to sign...">Hello from Phantom integration test!</textarea>
+            <button class="btn" onclick="testSignMessage()" id="signBtn" disabled style="margin-top: 10px;">
+                Sign Message
+            </button>
+        </div>
+
+        <div class="logs-header">
+            <h3>Activity Logs</h3>
+            <button class="clear-logs" onclick="clearLogs()">Clear</button>
+        </div>
+        <div class="logs" id="logs">Waiting for activity...</div>
+    </div>
+
+    <script>
+        // Phantom Wallet Integration Class
+        class PhantomWalletIntegration {
+            constructor() {
+                this.appScheme = 'phantom-test://';
+                this.phantomAppId = 'phantom';
+                this.pendingTransactions = new Map();
+                this.setupReturnHandler();
+                this.connectedPublicKey = null;
+            }
+
+            log(message, type = 'info') {
+                const timestamp = new Date().toLocaleTimeString();
+                const logElement = document.getElementById('logs');
+                const logMessage = `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+                logElement.textContent += logMessage;
+                logElement.scrollTop = logElement.scrollHeight;
+                console.log(logMessage);
+            }
+
+            async isPhantomInstalled() {
+                this.log('Checking if Phantom is installed...');
+                
+                return new Promise((resolve) => {
+                    const timeout = setTimeout(() => {
+                        this.log('Phantom installation check timed out - assuming not installed');
+                        resolve(false);
+                    }, 2000);
+                    
+                    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                    
+                    if (isMobile) {
+                        const startTime = Date.now();
+                        const iframe = document.createElement('iframe');
+                        iframe.style.display = 'none';
+                        iframe.src = 'phantom://';
+                        document.body.appendChild(iframe);
+                        
+                        setTimeout(() => {
+                            document.body.removeChild(iframe);
+                            const endTime = Date.now();
+                            const installed = (endTime - startTime) < 1000;
+                            clearTimeout(timeout);
+                            this.log(`Phantom ${installed ? 'appears to be' : 'does not appear to be'} installed`);
+                            resolve(installed);
+                        }, 500);
+                    } else {
+                        clearTimeout(timeout);
+                        this.log('Running on desktop - Phantom mobile check not applicable');
+                        resolve(false);
+                    }
+                });
+            }
+
+            generateTransactionId() {
+                return 'tx_' + Math.random().toString(36).substr(2, 9) + Date.now();
+            }
+
+            async connect() {
+                this.log('Initiating connection to Phantom...');
+                const transactionId = this.generateTransactionId();
+                const returnUrl = `${this.appScheme}phantom-return?action=connect&txId=${transactionId}`;
+                
+                const isInstalled = await this.isPhantomInstalled();
+                if (!isInstalled) {
+                    this.log('Phantom not installed, redirecting to app store...');
+                    this.redirectToAppStore();
+                    return;
+                }
+
+                this.pendingTransactions.set(transactionId, {
+                    type: 'connect',
+                    timestamp: Date.now(),
+                    promise: null
+                });
+
+                return new Promise((resolve, reject) => {
+                    this.pendingTransactions.get(transactionId).promise = { resolve, reject };
+                    
+                    const phantomUrl = this.buildPhantomUrl('connect', {
+                        redirect_link: encodeURIComponent(returnUrl),
+                        app_url: encodeURIComponent(window.location.origin)
+                    });
+
+                    this.log(`Opening Phantom with URL: ${phantomUrl}`);
+                    this.openPhantomApp(phantomUrl);
+                    
+                    // For testing, simulate a successful connection after 3 seconds
+                    setTimeout(() => {
+                        this.simulateSuccessfulConnection(transactionId);
+                    }, 3000);
+                });
+            }
+
+            simulateSuccessfulConnection(transactionId) {
+                const fakePublicKey = 'HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH';
+                this.processPhantomReturn({
+                    action: 'connect',
+                    txId: transactionId,
+                    success: true,
+                    publicKey: fakePublicKey,
+                    signature: null,
+                    error: null
+                });
+            }
+
+            async sendTransaction(transactionData) {
+                this.log('Preparing transaction...', 'transaction');
+                const transactionId = this.generateTransactionId();
+                const returnUrl = `${this.appScheme}phantom-return?action=signTransaction&txId=${transactionId}`;
+                
+                if (!this.connectedPublicKey) {
+                    throw new Error('Wallet not connected');
+                }
+
+                if (!this.validateTransactionData(transactionData)) {
+                    throw new Error('Invalid transaction data');
+                }
+
+                this.pendingTransactions.set(transactionId, {
+                    type: 'transaction',
+                    data: transactionData,
+                    timestamp: Date.now(),
+                    promise: null
+                });
+
+                return new Promise((resolve, reject) => {
+                    this.pendingTransactions.get(transactionId).promise = { resolve, reject };
+
+                    const phantomUrl = this.buildPhantomUrl('signTransaction', {
+                        redirect_link: encodeURIComponent(returnUrl),
+                        transaction: encodeURIComponent(JSON.stringify(transactionData))
+                    });
+
+                    this.log(`Sending transaction: ${JSON.stringify(transactionData)}`);
+                    this.openPhantomApp(phantomUrl);
+                    
+                    setTimeout(() => {
+                        const fakeSignature = '5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQpjKhoR4tjF3ZpRzrFmBV6UjKdiSZkQUW';
+                        this.processPhantomReturn({
+                            action: 'signTransaction',
+                            txId: transactionId,
+                            success: true,
+                            signature: fakeSignature,
+                            publicKey: this.connectedPublicKey,
+                            error: null
+                        });
+                    }, 4000);
+                });
+            }
+
+            async signMessage(message) {
+                this.log(`Requesting signature for message: "${message}"`);
+                const transactionId = this.generateTransactionId();
+                
+                if (!this.connectedPublicKey) {
+                    throw new Error('Wallet not connected');
+                }
+
+                this.pendingTransactions.set(transactionId, {
+                    type: 'signMessage',
+                    message: message,
+                    timestamp: Date.now(),
+                    promise: null
+                });
+
+                return new Promise((resolve, reject) => {
+                    this.pendingTransactions.get(transactionId).promise = { resolve, reject };
+
+                    setTimeout(() => {
+                        const fakeSignature = '3Bxs7NqZBXqJczKk2bCWKWnCqAzx7gZLF1YvQ2KMW4KwCpT5iU2kN8VbGm3Tm9F7QgF5WzXrS6YvJ4LmPp1K9N8a';
+                        this.processPhantomReturn({
+                            action: 'signMessage',
+                            txId: transactionId,
+                            success: true,
+                            signature: fakeSignature,
+                            publicKey: this.connectedPublicKey,
+                            error: null
+                        });
+                    }, 2000);
+                });
+            }
+
+            buildPhantomUrl(action, params) {
+                const baseUrl = `phantom://ul/v1/${action}`;
+                const queryString = Object.keys(params)
+                    .map(key => `${key}=${params[key]}`)
+                    .join('&');
+                
+                return `${baseUrl}?${queryString}`;
+            }
+
+            openPhantomApp(url) {
+                this.showLoadingState('Redirecting to Phantom...');
+                this.log(`Attempting to open: ${url}`);
+                
+                window.location.href = url;
+                
+                setTimeout(() => {
+                    this.hideLoadingState();
+                }, 1000);
+            }
+
+            redirectToAppStore() {
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                const isAndroid = /Android/.test(navigator.userAgent);
+                
+                if (isIOS) {
+                    window.open('https://apps.apple.com/app/phantom-solana-wallet/id1598432977', '_blank');
+                } else if (isAndroid) {
+                    window.open('https://play.google.com/store/apps/details?id=app.phantom', '_blank');
+                } else {
+                    alert('Please install Phantom wallet from your device\'s app store');
+                }
+            }
+
+            setupReturnHandler() {
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'visible') {
+                        this.handleAppReturn();
+                    }
+                });
+            }
+
+            handleAppReturn() {
+                setTimeout(() => {
+                    this.hideLoadingState();
+                }, 500);
+            }
+
+            processPhantomReturn(data) {
+                const { txId, success, signature, publicKey, error } = data;
+                const pendingTx = this.pendingTransactions.get(txId);
+                
+                if (!pendingTx) {
+                    this.log(`No pending transaction found for ID: ${txId}`, 'warning');
+                    return;
+                }
+
+                this.hideLoadingState();
+                
+                if (success) {
+                    const result = {
+                        signature,
+                        publicKey,
+                        transactionId: txId
+                    };
+                    
+                    if (pendingTx.type === 'connect') {
+                        this.connectedPublicKey = publicKey;
+                        this.updateConnectionStatus(true, publicKey);
+                    }
+                    
+                    if (pendingTx.promise) {
+                        pendingTx.promise.resolve(result);
+                    }
+                    
+                    this.onTransactionSuccess(result, pendingTx.type);
+                } else {
+                    const errorMsg = error || 'Transaction was cancelled or failed';
+                    
+                    if (pendingTx.promise) {
+                        pendingTx.promise.reject(new Error(errorMsg));
+                    }
+                    
+                    this.onTransactionError(errorMsg);
+                }
+
+                this.pendingTransactions.delete(txId);
+            }
+
+            validateTransactionData(data) {
+                return data && data.to && data.amount;
+            }
+
+            showLoadingState(message = 'Processing...') {
+                this.hideLoadingState();
+                
+                const overlay = document.createElement('div');
+                overlay.id = 'phantom-loading-overlay';
+                overlay.innerHTML = `
+                    <div style="
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        bottom: 0;
+                        background: rgba(0, 0, 0, 0.8);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        z-index: 10000;
+                        color: white;
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    ">
+                        <div style="text-align: center;">
+                            <div style="
+                                width: 50px;
+                                height: 50px;
+                                border: 3px solid #333;
+                                border-top: 3px solid #fff;
+                                border-radius: 50%;
+                                animation: spin 1s linear infinite;
+                                margin: 0 auto 20px;
+                            "></div>
+                            <div>${message}</div>
+                        </div>
+                    </div>
+                    <style>
+                        @keyframes spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                    </style>
+                `;
+                
+                document.body.appendChild(overlay);
+            }
+
+            hideLoadingState() {
+                const overlay = document.getElementById('phantom-loading-overlay');
+                if (overlay) {
+                    overlay.remove();
+                }
+            }
+
+            onTransactionSuccess(result, type) {
+                this.log(`${type} successful: ${JSON.stringify(result)}`, 'success');
+                this.showNotification(`${type} completed successfully!`, 'success');
+            }
+
+            onTransactionError(error) {
+                this.log(`Transaction failed: ${error}`, 'error');
+                this.showNotification(`Transaction failed: ${error}`, 'error');
+            }
+
+            showNotification(message, type = 'info') {
+                const notification = document.createElement('div');
+                notification.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    padding: 15px 20px;
+                    background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : '#2196F3'};
+                    color: white;
+                    border-radius: 8px;
+                    z-index: 10001;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    max-width: 300px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                `;
+                notification.textContent = message;
+                
+                document.body.appendChild(notification);
+                
+                setTimeout(() => {
+                    notification.style.opacity = '0';
+                    notification.style.transform = 'translateX(100%)';
+                    notification.style.transition = 'all 0.3s ease';
+                    setTimeout(() => notification.remove(), 300);
+                }, 5000);
+            }
+
+            async openPhantomBrowser(searchQuery, searchEngine = 'google') {
+                this.log(`Opening Phantom browser with search: "${searchQuery}" via ${searchEngine}`);
+                
+                let searchUrl;
+                switch (searchEngine) {
+                    case 'google':
+                        searchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
+                        break;
+                    case 'bing':
+                        searchUrl = `https://www.bing.com/search?q=${encodeURIComponent(searchQuery)}`;
+                        break;
+                    case 'duckduckgo':
+                        searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(searchQuery)}`;
+                        break;
+                    default:
+                        searchUrl = searchQuery;
+                }
+                
+                const phantomBrowserUrl = `phantom://browse?url=${encodeURIComponent(searchUrl)}`;
+                
+                this.log(`Generated Phantom browser URL: ${phantomBrowserUrl}`);
+                this.showLoadingState('Opening Phantom Browser...');
+                
+                try {
+                    window.location.href = phantomBrowserUrl;
+                    
+                    setTimeout(() => {
+                        this.hideLoadingState();
+                        this.showNotification('Phantom browser should be opening!', 'success');
+                    }, 1000);
+                    
+                } catch (error) {
+                    this.hideLoadingState();
+                    this.log(`Failed to open Phantom browser: ${error.message}`, 'error');
+                    this.showNotification('Failed to open Phantom browser', 'error');
+                }
+            }
+
+            async openPhantomBrowserDirect(url) {
+                this.log(`Opening Phantom browser directly with URL: "${url}"`);
+                
+                if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                    url = 'https://' + url;
+                }
+                
+                const phantomBrowserUrl = `phantom://browse?url=${encodeURIComponent(url)}`;
+                
+                this.log(`Generated direct Phantom browser URL: ${phantomBrowserUrl}`);
+                this.showLoadingState('Opening Phantom Browser...');
+                
+                try {
+                    window.location.href = phantomBrowserUrl;
+                    
+                    setTimeout(() => {
+                        this.hideLoadingState();
+                        this.showNotification('Phantom browser opened with URL!', 'success');
+                    }, 1000);
+                    
+                } catch (error) {
+                    this.hideLoadingState();
+                    this.log(`Failed to open Phantom browser: ${error.message}`, 'error');
+                    this.showNotification('Failed to open Phantom browser', 'error');
+                }
+            }
+
+            updateConnectionStatus(connected, publicKey = null) {
+                const statusIndicator = document.getElementById('statusIndicator');
+                const connectionStatus = document.getElementById('connectionStatus');
+                const walletInfo = document.getElementById('walletInfo');
+                const walletAddress = document.getElementById('walletAddress');
+                
+                if (connected && publicKey) {
+                    statusIndicator.className = 'status-indicator connected';
+                    connectionStatus.textContent = 'Connected';
+                    walletAddress.textContent = publicKey;
+                    walletInfo.classList.add('show');
+                    
+                    document.getElementById('sendBtn').disabled = false;
+                    document.getElementById('signBtn').disabled = false;
+                } else {
+                    statusIndicator.className = 'status-indicator disconnected';
+                    connectionStatus.textContent = 'Not Connected';
+                    walletInfo.classList.remove('show');
+                    
+                    document.getElementById('sendBtn').disabled = true;
+                    document.getElementById('signBtn').disabled = true;
+                }
+            }
+        }
+
+        // Initialize the phantom wallet integration
+        const phantomWallet = new PhantomWalletIntegration();
+
+        // Global test functions - these were missing from your original code
+        async function testConnection() {
+            try {
+                const btn = document.getElementById('connectBtn');
+                btn.textContent = 'Connecting...';
+                btn.classList.add('loading');
+                btn.disabled = true;
+                
+                const result = await phantomWallet.connect();
+                phantomWallet.log('Connection successful!', 'success');
+                
+                btn.textContent = 'Connected ✓';
+                setTimeout(() => {
+                    btn.textContent = 'Connect Phantom Wallet';
+                    btn.disabled = false;
+                    btn.classList.remove('loading');
+                }, 2000);
+                
+            } catch (error) {
+                phantomWallet.log(`Connection failed: ${error.message}`, 'error');
+                const btn = document.getElementById('connectBtn');
+                btn.textContent = 'Connection Failed';
+                btn.disabled = false;
+                btn.classList.remove('loading');
+                
+                setTimeout(() => {
+                    btn.textContent = 'Connect Phantom Wallet';
+                }, 2000);
+            }
+        }
+
+        async function testInstallCheck() {
+            const btn = document.getElementById('installBtn');
+            btn.textContent = 'Checking...';
+            btn.disabled = true;
+            
+            const isInstalled = await phantomWallet.isPhantomInstalled();
+            
+            btn.textContent = isInstalled ? 'Phantom Installed ✓' : 'Phantom Not Found ✗';
+            
+            setTimeout(() => {
+                btn.textContent = 'Check if Phantom is Installed';
+                btn.disabled = false;
+            }, 3000);
+        }
+
+        async function testTransaction() {
+            const recipientAddress = document.getElementById('recipientAddress').value;
+            const amount = parseFloat(document.getElementById('amount').value);
+            const memo = document.getElementById('memo').value;
+            
+            if (!recipientAddress || !amount) {
+                phantomWallet.showNotification('Please fill in recipient address and amount', 'error');
+                return;
+            }
+            
+            try {
+                const btn = document.getElementById('sendBtn');
+                btn.textContent = 'Sending...';
+                btn.disabled = true;
+                
+                const transactionData = {
+                    to: recipientAddress,
+                    amount: amount * 1000000000, // Convert SOL to lamports
+                    memo: memo || ''
+                };
+                
+                const result = await phantomWallet.sendTransaction(transactionData);
+                phantomWallet.log('Transaction sent successfully!', 'success');
+                
+                btn.textContent = 'Transaction Sent ✓';
+                setTimeout(() => {
+                    btn.textContent = 'Send Transaction';
+                    btn.disabled = false;
+                }, 3000);
+                
+            } catch (error) {
+                phantomWallet.log(`Transaction failed: ${error.message}`, 'error');
+                const btn = document.getElementById('sendBtn');
+                btn.textContent = 'Transaction Failed';
+                
+                setTimeout(() => {
+                    btn.textContent = 'Send Transaction';
+                    btn.disabled = false;
+                }, 3000);
+            }
+        }
+
+        async function testSignMessage() {
+            const message = document.getElementById('messageToSign').value;
+            
+            if (!message.trim()) {
+                phantomWallet.showNotification('Please enter a message to sign', 'error');
+                return;
+            }
+            
+            try {
+                const btn = document.getElementById('signBtn');
+                btn.textContent = 'Signing...';
+                btn.disabled = true;
+                
+                const result = await phantomWallet.signMessage(message);
+                phantomWallet.log('Message signed successfully!', 'success');
+                
+                btn.textContent = 'Message Signed ✓';
+                setTimeout(() => {
+                    btn.textContent = 'Sign Message';
+                    btn.disabled = false;
+                }, 3000);
+                
+            } catch (error) {
+                phantomWallet.log(`Message signing failed: ${error.message}`, 'error');
+                const btn = document.getElementById('signBtn');
+                btn.textContent = 'Signing Failed';
+                
+                setTimeout(() => {
+                    btn.textContent = 'Sign Message';
+                    btn.disabled = false;
+                }, 3000);
+            }
+        }
+
+        // Browser functions
+        async function openPhantomBrowser() {
+            const searchQuery = document.getElementById('searchQuery').value.trim();
+            const searchEngine = document.getElementById('searchEngine').value;
+            
+            if (!searchQuery) {
+                phantomWallet.showNotification('Please enter a search query', 'error');
+                return;
+            }
+            
+            if (searchEngine === 'custom') {
+                const customUrl = document.getElementById('customUrl').value.trim();
+                if (!customUrl) {
+                    phantomWallet.showNotification('Please enter a custom URL', 'error');
+                    return;
+                }
+                await phantomWallet.openPhantomBrowserDirect(customUrl);
+            } else {
+                await phantomWallet.openPhantomBrowser(searchQuery, searchEngine);
+            }
+        }
+
+        async function openPhantomBrowserDirect() {
+            const searchQuery = document.getElementById('searchQuery').value.trim();
+            
+            if (!searchQuery) {
+                phantomWallet.showNotification('Please enter a URL or search term', 'error');
+                return;
+            }
+            
+            // If it looks like a URL, open directly, otherwise search Google
+            if (searchQuery.includes('.') && !searchQuery.includes(' ')) {
+                await phantomWallet.openPhantomBrowserDirect(searchQuery);
+            } else {
+                await phantomWallet.openPhantomBrowser(searchQuery, 'google');
+            }
+        }
+
+        // Clear logs function
+        function clearLogs() {
+            document.getElementById('logs').textContent = 'Logs cleared.\n';
+            phantomWallet.log('Logs cleared by user');
+        }
+
+        // Handle search engine selection
+        document.getElementById('searchEngine').addEventListener('change', function() {
+            const customUrlGroup = document.getElementById('customUrlGroup');
+            if (this.value === 'custom') {
+                customUrlGroup.style.display = 'block';
+            } else {
+                customUrlGroup.style.display = 'none';
+            }
+        });
+
+        // Initialize the page
+        window.addEventListener('load', () => {
+            phantomWallet.log('Phantom Wallet Integration Test Page loaded');
+            phantomWallet.log('Ready to test wallet functionality!');
+        });
+    </script>
+</body>
+</html>
